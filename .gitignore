@@ -5,25 +5,25 @@ Thumbs.db
 .idea/
 
 # Local assistant / workflow files, not part of the public demo
-.claude/
-codex-auto/
-codex-auto-engine/
-workers/
-workflow/
-scripts/
-docs/
-AGENTS.md
-codex_auto_monitor_usage.docx
-总控和程序员原提示词.docx
-{}
+/.claude/
+/codex-auto/
+/codex-auto-engine/
+/workers/
+/workflow/
+/scripts/
+/docs/
+/AGENTS.md
+/codex_auto_monitor_usage.docx
+/总控和程序员原提示词.docx
+/{}
 
 # Root automation package, not required for the game demo
-node_modules/
-package-lock.json
-package.json
+/node_modules/
+/package-lock.json
+/package.json
 
 # Unrelated local folders
-踢球游戏复刻/
+/踢球游戏复刻/
 
 # Cocos Creator generated/cache/local files
 cocos-project/today-guard-game/.git/
