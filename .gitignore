@@ -1,0 +1,43 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local assistant / workflow files, not part of the public demo
+.claude/
+codex-auto/
+codex-auto-engine/
+workers/
+workflow/
+scripts/
+docs/
+AGENTS.md
+codex_auto_monitor_usage.docx
+总控和程序员原提示词.docx
+{}
+
+# Root automation package, not required for the game demo
+node_modules/
+package-lock.json
+package.json
+
+# Unrelated local folders
+踢球游戏复刻/
+
+# Cocos Creator generated/cache/local files
+cocos-project/today-guard-game/.git/
+cocos-project/today-guard-game/.git.local-backup/
+cocos-project/today-guard-game/library/
+cocos-project/today-guard-game/temp/
+cocos-project/today-guard-game/local/
+cocos-project/today-guard-game/build/
+cocos-project/today-guard-game/profiles/
+cocos-project/today-guard-game/native/
+cocos-project/today-guard-game/node_modules/
+cocos-project/today-guard-game/.vscode/
+cocos-project/today-guard-game/.idea/
+
+# Vercel static output should be added only after a Cocos Web build is copied here.
+# Keep the folder ignored until the build is intentionally prepared.
+web-deploy/
