@@ -68,12 +68,12 @@ export class SfxController extends Component {
     public hp0Clips: AudioClip[] = [];
 
     private readonly _fallbackClips: SfxClipMap = {};
-    private _fallbackLoaded = false;
+    private readonly _loadingPaths: Record<string, boolean> = {};
+    private readonly _requestedNames: Record<string, boolean> = {};
     private _activeSfxCount = 0;
 
     protected onLoad(): void {
         this.audioSource = this.audioSource ?? getOrAddComponent(this.node, AudioSource);
-        this.loadFallbackClips();
     }
 
     public static getForNode(node: Node | null): SfxController | null {
@@ -101,7 +101,7 @@ export class SfxController extends Component {
         }
 
         this.audioSource = this.audioSource ?? getOrAddComponent(this.node, AudioSource);
-        this.loadFallbackClips();
+        this.loadClipsForName(name);
         const clip = this.pickClip(name);
         if (!this.audioSource || !clip) {
             return;
@@ -172,47 +172,103 @@ export class SfxController extends Component {
         }
     }
 
-    private loadFallbackClips(): void {
-        if (this._fallbackLoaded) {
+    private loadClipsForName(name: string): void {
+        if (this._requestedNames[name]) {
             return;
         }
 
-        this._fallbackLoaded = true;
-        this.loadNamedAudioClips();
-        this.loadFallbackClip('audio/hit', ['attack', 'kill', 'combo_3', 'combo_5', 'combo_10']);
-        this.loadFallbackClip('audio/hurt', ['hurt', 'hp_70', 'hp_40', 'hp_20']);
-        this.loadFallbackClip('audio/skill', ['wave_start', 'wave_start_fast', 'monster_intro', 'monster_intro_neihao', 'monster_intro_cuihuo', 'monster_intro_shuaiguo']);
-        this.loadFallbackClip('audio/victory', ['win', 'hp_100']);
-        this.loadFallbackClip('audio/gameover', ['gameover', 'hp_0']);
-    }
+        this._requestedNames[name] = true;
 
-    private loadNamedAudioClips(): void {
-        this.loadFallbackClip('audio/attack_1', ['attack']);
-        this.loadFallbackClip('audio/attack_2', ['attack']);
-        this.loadFallbackClip('audio/attack_3', ['attack']);
-        this.loadFallbackClip('audio/kill_ok', ['kill']);
-        this.loadFallbackClip('audio/kill_okok', ['kill']);
-        this.loadFallbackClip('audio/kill_yes', ['kill']);
-        this.loadFallbackClip('audio/hurt_ah', ['hurt']);
-        this.loadFallbackClip('audio/wave_start', ['wave_start']);
-        this.loadFallbackClip('audio/wave_start_fast', ['wave_start_fast']);
-        this.loadFallbackClip('audio/win_xiaban', ['win']);
-        this.loadFallbackClip('audio/gameover_wanla', ['gameover']);
-        this.loadFallbackClip('audio/monster_intro_neihao', ['monster_intro_neihao']);
-        this.loadFallbackClip('audio/monster_intro_cuihuo', ['monster_intro_cuihuo']);
-        this.loadFallbackClip('audio/monster_intro_shuaiguo', ['monster_intro_shuaiguo']);
-        this.loadFallbackClip('audio/combo_3', ['combo_3']);
-        this.loadFallbackClip('audio/combo_5', ['combo_5']);
-        this.loadFallbackClip('audio/combo_10', ['combo_10']);
-        this.loadFallbackClip('audio/hp_100', ['hp_100']);
-        this.loadFallbackClip('audio/hp_70', ['hp_70']);
-        this.loadFallbackClip('audio/hp_40', ['hp_40']);
-        this.loadFallbackClip('audio/hp_20', ['hp_20']);
-        this.loadFallbackClip('audio/hp_0', ['hp_0']);
+        switch (name) {
+            case 'attack':
+                this.loadFallbackClip('audio/attack_1', ['attack']);
+                this.loadFallbackClip('audio/attack_2', ['attack']);
+                this.loadFallbackClip('audio/attack_3', ['attack']);
+                this.loadFallbackClip('audio/hit', ['attack']);
+                return;
+            case 'kill':
+                this.loadFallbackClip('audio/kill_ok', ['kill']);
+                this.loadFallbackClip('audio/kill_okok', ['kill']);
+                this.loadFallbackClip('audio/kill_yes', ['kill']);
+                this.loadFallbackClip('audio/hit', ['kill']);
+                return;
+            case 'hurt':
+                this.loadFallbackClip('audio/hurt_ah', ['hurt']);
+                this.loadFallbackClip('audio/hurt', ['hurt']);
+                return;
+            case 'wave_start':
+                this.loadFallbackClip('audio/wave_start', ['wave_start']);
+                this.loadFallbackClip('audio/skill', ['wave_start']);
+                return;
+            case 'wave_start_fast':
+                this.loadFallbackClip('audio/wave_start_fast', ['wave_start_fast']);
+                this.loadFallbackClip('audio/wave_start', ['wave_start_fast']);
+                return;
+            case 'win':
+                this.loadFallbackClip('audio/win_xiaban', ['win']);
+                this.loadFallbackClip('audio/victory', ['win']);
+                return;
+            case 'gameover':
+                this.loadFallbackClip('audio/gameover_wanla', ['gameover']);
+                this.loadFallbackClip('audio/gameover', ['gameover']);
+                return;
+            case 'monster_intro':
+            case 'monster_intro_neihao':
+                this.loadFallbackClip('audio/monster_intro_neihao', ['monster_intro_neihao']);
+                this.loadFallbackClip('audio/skill', ['monster_intro', 'monster_intro_neihao']);
+                return;
+            case 'monster_intro_cuihuo':
+                this.loadFallbackClip('audio/monster_intro_cuihuo', ['monster_intro_cuihuo']);
+                this.loadFallbackClip('audio/skill', ['monster_intro_cuihuo']);
+                return;
+            case 'monster_intro_shuaiguo':
+                this.loadFallbackClip('audio/monster_intro_shuaiguo', ['monster_intro_shuaiguo']);
+                this.loadFallbackClip('audio/skill', ['monster_intro_shuaiguo']);
+                return;
+            case 'combo_3':
+                this.loadFallbackClip('audio/combo_3', ['combo_3']);
+                this.loadFallbackClip('audio/hit', ['combo_3']);
+                return;
+            case 'combo_5':
+                this.loadFallbackClip('audio/combo_5', ['combo_5']);
+                this.loadFallbackClip('audio/hit', ['combo_5']);
+                return;
+            case 'combo_10':
+                this.loadFallbackClip('audio/combo_10', ['combo_10']);
+                this.loadFallbackClip('audio/hit', ['combo_10']);
+                return;
+            case 'hp_100':
+                this.loadFallbackClip('audio/victory', ['hp_100']);
+                return;
+            case 'hp_70':
+                this.loadFallbackClip('audio/hp_70', ['hp_70']);
+                this.loadFallbackClip('audio/hurt', ['hp_70']);
+                return;
+            case 'hp_40':
+                this.loadFallbackClip('audio/hp_40', ['hp_40']);
+                this.loadFallbackClip('audio/hurt', ['hp_40']);
+                return;
+            case 'hp_20':
+                this.loadFallbackClip('audio/hp_20', ['hp_20']);
+                this.loadFallbackClip('audio/hurt', ['hp_20']);
+                return;
+            case 'hp_0':
+                this.loadFallbackClip('audio/hp_0', ['hp_0']);
+                this.loadFallbackClip('audio/gameover', ['hp_0']);
+                return;
+            default:
+                return;
+        }
     }
 
     private loadFallbackClip(path: string, names: string[]): void {
+        if (this._loadingPaths[path]) {
+            return;
+        }
+
+        this._loadingPaths[path] = true;
         resources.load(path, AudioClip, (error, clip) => {
+            this._loadingPaths[path] = false;
             if (error || !clip) {
                 return;
             }

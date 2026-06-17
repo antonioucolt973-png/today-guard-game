@@ -1,4 +1,4 @@
-import { _decorator, Button, Color, Component, Graphics, Label, Node, UITransform } from 'cc';
+import { _decorator, AudioClip, Button, Color, Component, Graphics, Label, Node, resources, SpriteFrame, UITransform } from 'cc';
 import { ArtSpriteHelper } from './ArtSpriteHelper';
 import { FeedbackController } from './FeedbackController';
 import { getExistingComponent, getOrAddComponent } from './ComponentLookup';
@@ -34,6 +34,7 @@ export class StartGameController extends Component {
     public battleBackgroundPath = 'art/ui/battle_bg';
 
     private _buttonBound = false;
+    private _preloadedFirstWaveAssets = false;
 
     protected start(): void {
         this.setupStartPanel();
@@ -83,6 +84,7 @@ export class StartGameController extends Component {
         this.startButton = this.startButton ?? this.getOrCreateStartButton();
 
         this.getWaveController()?.prepareForStartScreen?.();
+        this.preloadFirstWaveAssets();
         this.bindStartButton();
     }
 
@@ -90,7 +92,41 @@ export class StartGameController extends Component {
         FeedbackController.getForNode(this.node)?.playClickFeedback(this.startButton?.node ?? this.node);
         this.unbindStartButton();
         this.getStartPanel().active = false;
-        this.getWaveController()?.startFirstWaveFromStartScreen?.();
+        this.scheduleOnce(() => {
+            this.getWaveController()?.startFirstWaveFromStartScreen?.();
+        }, 0.08);
+    }
+
+    private preloadFirstWaveAssets(): void {
+        if (this._preloadedFirstWaveAssets) {
+            return;
+        }
+
+        this._preloadedFirstWaveAssets = true;
+        [
+            this.backgroundPath,
+            this.battleBackgroundPath,
+            'art/base/spirit_base',
+            'art/player/player_guard',
+            'art/player/player_guard_attack',
+            'art/monsters/monster_neihao',
+            'art/monsters/monster_cui_huo',
+            'art/monsters/monster_shuai_guo',
+            'art/projectiles/projectile_keycap_esc',
+        ].forEach((path) => {
+            if (path) {
+                resources.preload(`${path}/spriteFrame`, SpriteFrame);
+            }
+        });
+
+        [
+            'audio/wave_start',
+            'audio/attack_1',
+            'audio/attack_2',
+            'audio/attack_3',
+            'audio/hit',
+            'audio/kill_ok',
+        ].forEach((path) => resources.preload(path, AudioClip));
     }
 
     private bindStartButton(): void {
