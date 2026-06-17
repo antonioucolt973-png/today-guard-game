@@ -36,8 +36,8 @@ canvas {
   position: fixed;
   left: 50%;
   top: 50%;
-  width: min(100vw, calc(100vh * 4 / 3)) !important;
-  height: min(100vh, calc(100vw * 3 / 4)) !important;
+  width: min(100vw, calc(100vh * 16 / 9)) !important;
+  height: min(100vh, calc(100vw * 9 / 16)) !important;
   margin: 0;
   border: 0;
   border-radius: 0;
