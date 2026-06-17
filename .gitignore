@@ -38,6 +38,4 @@ cocos-project/today-guard-game/node_modules/
 cocos-project/today-guard-game/.vscode/
 cocos-project/today-guard-game/.idea/
 
-# Vercel static output should be added only after a Cocos Web build is copied here.
-# Keep the folder ignored until the build is intentionally prepared.
-web-deploy/
+# Vercel static output copied from Cocos Web build.
