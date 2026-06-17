@@ -30,11 +30,10 @@ export class BgmController extends Component {
 
     private _currentName: BgmName | '' = '';
     private _requestedName: BgmName | '' = '';
-    private _defaultClipsLoaded = false;
+    private readonly _loadingClips: Record<string, boolean> = {};
 
     protected onLoad(): void {
         this.audioSource = this.audioSource ?? getOrAddComponent(this.node, AudioSource);
-        this.loadDefaultClips();
     }
 
     public static getForNode(node: Node | null): BgmController | null {
@@ -63,10 +62,13 @@ export class BgmController extends Component {
     public playBgm(name: BgmName): void {
         this._requestedName = name;
         this.audioSource = this.audioSource ?? getOrAddComponent(this.node, AudioSource);
-        this.loadDefaultClips();
 
         if (!this.audioSource) {
             return;
+        }
+
+        if (!this.hasExactClip(name)) {
+            this.loadClipForName(name);
         }
 
         const clip = this.getClip(name);
@@ -119,25 +121,47 @@ export class BgmController extends Component {
         return this.battleVolume;
     }
 
-    private loadDefaultClips(): void {
-        if (this._defaultClipsLoaded) {
+    private hasExactClip(name: BgmName): boolean {
+        if (name === 'pressure') {
+            return !!this.pressureClip;
+        }
+
+        if (name === 'result') {
+            return !!this.resultClip;
+        }
+
+        return !!this.battleClip;
+    }
+
+    private loadClipForName(name: BgmName): void {
+        if (name === 'pressure') {
+            this.loadDefaultClip('audio/bgm/bgm_pressure', name, (clip) => { this.pressureClip = this.pressureClip ?? clip; });
+            this.loadDefaultClip('audio/bgm/bgm_battle', 'battle', (clip) => { this.battleClip = this.battleClip ?? clip; });
             return;
         }
 
-        this._defaultClipsLoaded = true;
-        this.loadDefaultClip('audio/bgm/bgm_battle', (clip) => { this.battleClip = this.battleClip ?? clip; });
-        this.loadDefaultClip('audio/bgm/bgm_pressure', (clip) => { this.pressureClip = this.pressureClip ?? clip; });
-        this.loadDefaultClip('audio/bgm/bgm_result', (clip) => { this.resultClip = this.resultClip ?? clip; });
+        if (name === 'result') {
+            this.loadDefaultClip('audio/bgm/bgm_result', name, (clip) => { this.resultClip = this.resultClip ?? clip; });
+            return;
+        }
+
+        this.loadDefaultClip('audio/bgm/bgm_battle', name, (clip) => { this.battleClip = this.battleClip ?? clip; });
     }
 
-    private loadDefaultClip(path: string, assign: (clip: AudioClip) => void): void {
+    private loadDefaultClip(path: string, name: BgmName, assign: (clip: AudioClip) => void): void {
+        if (this._loadingClips[path]) {
+            return;
+        }
+
+        this._loadingClips[path] = true;
         resources.load(path, AudioClip, (error, clip) => {
+            this._loadingClips[path] = false;
             if (error || !clip) {
                 return;
             }
 
             assign(clip);
-            if (this._requestedName && this._requestedName !== this._currentName) {
+            if (this._requestedName === name && this._requestedName !== this._currentName) {
                 this.playBgm(this._requestedName);
             }
         });
