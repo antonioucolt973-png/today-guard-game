@@ -1,6 +1,7 @@
-import { _decorator, AudioClip, Button, Color, Component, Graphics, Label, Node, resources, SpriteFrame, UITransform } from 'cc';
+import { _decorator, AudioClip, Button, Color, Component, Graphics, Label, Node, resources, UITransform } from 'cc';
 import { ArtSpriteHelper } from './ArtSpriteHelper';
 import { FeedbackController } from './FeedbackController';
+import { SfxController } from './SfxController';
 import { getExistingComponent, getOrAddComponent } from './ComponentLookup';
 
 const { ccclass, property } = _decorator;
@@ -94,7 +95,7 @@ export class StartGameController extends Component {
         this.getStartPanel().active = false;
         this.scheduleOnce(() => {
             this.getWaveController()?.startFirstWaveFromStartScreen?.();
-        }, 0.08);
+        }, 0.12);
     }
 
     private preloadFirstWaveAssets(): void {
@@ -115,7 +116,7 @@ export class StartGameController extends Component {
             'art/projectiles/projectile_keycap_esc',
         ].forEach((path) => {
             if (path) {
-                resources.preload(`${path}/spriteFrame`, SpriteFrame);
+                ArtSpriteHelper.preloadSprite(path);
             }
         });
 
@@ -127,6 +128,9 @@ export class StartGameController extends Component {
             'audio/hit',
             'audio/kill_ok',
         ].forEach((path) => resources.preload(path, AudioClip));
+
+        const sfxController = SfxController.getForNode(this.node);
+        ['wave_start', 'attack', 'kill', 'monster_intro_neihao'].forEach((name) => sfxController?.preloadSfx(name));
     }
 
     private bindStartButton(): void {

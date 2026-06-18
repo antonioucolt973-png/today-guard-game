@@ -114,6 +114,14 @@ export class SfxController extends Component {
         }, this.getClipDuration(clip));
     }
 
+    public preloadSfx(name: string): void {
+        if (!name) {
+            return;
+        }
+
+        this.loadClipsForName(name);
+    }
+
     private pickClip(name: string): AudioClip | null {
         const clips = this.getConfiguredClips(name);
         if (clips.length > 0) {

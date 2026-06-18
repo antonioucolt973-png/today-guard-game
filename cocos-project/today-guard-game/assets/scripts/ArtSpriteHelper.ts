@@ -2,6 +2,13 @@ import { Graphics, Node, resources, Sprite, SpriteFrame, UITransform } from 'cc'
 import { getExistingComponent, getOrAddComponent } from './ComponentLookup';
 
 export class ArtSpriteHelper {
+    private static readonly spriteFrameCache: Record<string, SpriteFrame> = {};
+    private static readonly loadingCallbacks: Record<string, Array<(spriteFrame: SpriteFrame | null) => void>> = {};
+
+    public static preloadSprite(resourcePath: string): void {
+        this.loadSpriteFrame(resourcePath, () => {});
+    }
+
     public static applySprite(node: Node, resourcePath: string, width: number, height: number, disableGraphics = true): void {
         const transform = getOrAddComponent(node, UITransform);
         transform.setContentSize(width, height);
@@ -11,27 +18,22 @@ export class ArtSpriteHelper {
         sprite.enabled = true;
         this.ensureNodeVisible(node);
 
-        resources.load(`${resourcePath}/spriteFrame`, SpriteFrame, (error, spriteFrame) => {
-            if (error || !spriteFrame || !node.isValid) {
+        const cachedSpriteFrame = this.spriteFrameCache[resourcePath];
+        if (cachedSpriteFrame) {
+            this.applyLoadedSpriteFrame(node, sprite, cachedSpriteFrame, disableGraphics);
+            return;
+        }
+
+        this.loadSpriteFrame(resourcePath, (spriteFrame) => {
+            if (!spriteFrame || !node.isValid) {
                 const graphics = getExistingComponent(node, Graphics);
                 if (graphics) {
                     graphics.enabled = true;
                 }
-                console.warn(`[ArtSpriteHelper] keep graphics fallback, sprite load failed path=${resourcePath}`, error);
                 return;
             }
 
-            sprite.spriteFrame = spriteFrame;
-            sprite.enabled = true;
-            const graphics = getExistingComponent(node, Graphics);
-            if (disableGraphics) {
-                if (graphics) {
-                    graphics.enabled = false;
-                }
-            } else if (graphics) {
-                graphics.enabled = true;
-            }
-            this.ensureNodeVisible(node);
+            this.applyLoadedSpriteFrame(node, sprite, spriteFrame, disableGraphics);
         });
     }
 
@@ -100,6 +102,49 @@ export class ArtSpriteHelper {
             node.setScale(scale.x === 0 ? 1 : scale.x, scale.y === 0 ? 1 : scale.y, scale.z === 0 ? 1 : scale.z);
         }
 
+    }
+
+    private static loadSpriteFrame(resourcePath: string, callback: (spriteFrame: SpriteFrame | null) => void): void {
+        const cachedSpriteFrame = this.spriteFrameCache[resourcePath];
+        if (cachedSpriteFrame) {
+            callback(cachedSpriteFrame);
+            return;
+        }
+
+        const existingCallbacks = this.loadingCallbacks[resourcePath];
+        if (existingCallbacks) {
+            existingCallbacks.push(callback);
+            return;
+        }
+
+        this.loadingCallbacks[resourcePath] = [callback];
+        resources.load(`${resourcePath}/spriteFrame`, SpriteFrame, (error, spriteFrame) => {
+            if (error || !spriteFrame) {
+                console.warn(`[ArtSpriteHelper] keep graphics fallback, sprite load failed path=${resourcePath}`, error);
+            } else {
+                this.spriteFrameCache[resourcePath] = spriteFrame;
+            }
+
+            const callbacks = this.loadingCallbacks[resourcePath] ?? [];
+            delete this.loadingCallbacks[resourcePath];
+            callbacks.forEach((pendingCallback) => pendingCallback(spriteFrame ?? null));
+        });
+    }
+
+    private static applyLoadedSpriteFrame(node: Node, sprite: Sprite, spriteFrame: SpriteFrame, disableGraphics: boolean): void {
+        sprite.spriteFrame = spriteFrame;
+        sprite.enabled = true;
+
+        const graphics = getExistingComponent(node, Graphics);
+        if (disableGraphics) {
+            if (graphics) {
+                graphics.enabled = false;
+            }
+        } else if (graphics) {
+            graphics.enabled = true;
+        }
+
+        this.ensureNodeVisible(node);
     }
 
 }
