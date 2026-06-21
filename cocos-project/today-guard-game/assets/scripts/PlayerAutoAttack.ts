@@ -4,6 +4,7 @@ import { BasicBullet } from './BasicBullet';
 import { BattleStats } from './BattleStats';
 import { GameState } from './GameState';
 import { HomeBaseHealth } from './HomeBaseHealth';
+import { SaveDataManager } from './SaveDataManager';
 import { SfxController } from './SfxController';
 import { getOrAddComponent } from './ComponentLookup';
 
@@ -70,8 +71,10 @@ export class PlayerAutoAttack extends Component {
     private _baseAttackInterval = 2.4;
     private _attackIntervalMultiplier = 1;
     private _temporaryAttackIntervalMultiplier = 1;
+    private _upgradeAttackIntervalMultiplier = 1;
     private _bulletHitBonus = 0;
     private _bulletDamageBonus = 0;
+    private _upgradeBulletDamageBonus = 0;
 
     protected onLoad(): void {
         this._baseAttackInterval = this.attackInterval;
@@ -84,6 +87,7 @@ export class PlayerAutoAttack extends Component {
         if (!this.homeBaseHealth && this.homeBase) {
             this.homeBaseHealth = this.findHomeBaseHealth(this.homeBase);
         }
+        this.applyPersistentUpgrades();
     }
 
     protected update(deltaTime: number): void {
@@ -140,7 +144,7 @@ export class PlayerAutoAttack extends Component {
             this.hitDistance + this._bulletHitBonus,
             this.bulletColor,
             this.battleStats,
-            this.bulletDamage + this._bulletDamageBonus,
+            this.bulletDamage + this._bulletDamageBonus + this._upgradeBulletDamageBonus,
             this.bulletSpriteFrame,
             this.monsterLayer,
         );
@@ -153,6 +157,7 @@ export class PlayerAutoAttack extends Component {
         this.resetAttackInterval();
         this.resetBulletHitBonus();
         this.resetBulletDamageBonus();
+        this.applyPersistentUpgrades();
         this.clearBullets();
     }
 
@@ -192,7 +197,7 @@ export class PlayerAutoAttack extends Component {
             return;
         }
 
-        this._bulletHitBonus = Math.min(24, this._bulletHitBonus + amount);
+        this._bulletHitBonus = Math.min(42, this._bulletHitBonus + amount);
     }
 
     public resetBulletHitBonus(): void {
@@ -204,7 +209,7 @@ export class PlayerAutoAttack extends Component {
             return;
         }
 
-        this._bulletDamageBonus = Math.min(3, this._bulletDamageBonus + Math.floor(amount));
+        this._bulletDamageBonus = Math.min(6, this._bulletDamageBonus + Math.floor(amount));
     }
 
     public resetBulletDamageBonus(): void {
@@ -214,8 +219,20 @@ export class PlayerAutoAttack extends Component {
     private refreshAttackInterval(): void {
         this.attackInterval = Math.max(
             0.6,
-            this._baseAttackInterval * this._attackIntervalMultiplier * this._temporaryAttackIntervalMultiplier,
+            this._baseAttackInterval
+                * this._upgradeAttackIntervalMultiplier
+                * this._attackIntervalMultiplier
+                * this._temporaryAttackIntervalMultiplier,
         );
+    }
+
+    public applyPersistentUpgrades(): void {
+        const saveData = SaveDataManager.load();
+        const keyboardLevel = Math.max(0, Math.floor(saveData.upgrades.keyboard ?? 0));
+        const coffeeLevel = Math.max(0, Math.floor(saveData.upgrades.coffee ?? 0));
+        this._upgradeBulletDamageBonus = keyboardLevel;
+        this._upgradeAttackIntervalMultiplier = Math.max(0.5, 1 - coffeeLevel * 0.05);
+        this.refreshAttackInterval();
     }
 
     private findNearestMonsterToHomeBase(): Node | null {

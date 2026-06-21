@@ -4,6 +4,7 @@ import { BgmController } from './BgmController';
 import { BattleReportController } from './BattleReportController';
 import { FeedbackController } from './FeedbackController';
 import { GameState } from './GameState';
+import { SaveDataManager } from './SaveDataManager';
 import { SfxController } from './SfxController';
 import { getExistingComponent, getOrAddComponent } from './ComponentLookup';
 
@@ -48,6 +49,8 @@ export class HomeBaseHealth extends Component {
     private _damageReductionRate = 0;
     private _shieldHp = 0;
     private _lastHpSfxLevel = 100;
+    private _baseMaxHp = 100;
+    private _runMaxHpPenalty = 0;
 
     public get isGameOver(): boolean {
         return this._isGameOver;
@@ -56,6 +59,8 @@ export class HomeBaseHealth extends Component {
     public resetHealth(hideGameOverPanel = true): void {
         this._isGameOver = false;
         GameState.reset();
+        this.resetRunMaxHpPenalty();
+        this.applyPersistentUpgrades(true);
         this.currentHp = this.maxHp;
         this.resetDamageReduction();
         this.resetShield();
@@ -69,6 +74,9 @@ export class HomeBaseHealth extends Component {
     }
 
     protected onLoad(): void {
+        this._baseMaxHp = Math.max(1, Math.floor(this.maxHp));
+        const shouldFillToMax = this.currentHp >= this._baseMaxHp;
+        this.applyPersistentUpgrades(shouldFillToMax);
         this.currentHp = this.clampHp(this.currentHp > 0 ? this.currentHp : this.maxHp);
 
         if (this.gameOverPanel) {
@@ -140,6 +148,21 @@ export class HomeBaseHealth extends Component {
 
     public resetShield(): void {
         this._shieldHp = 0;
+        this.updateHpLabel();
+    }
+
+    public applyRunMaxHpPenalty(amount: number): void {
+        if (amount <= 0 || this._isGameOver) {
+            return;
+        }
+
+        this._runMaxHpPenalty += Math.floor(amount);
+        this.applyPersistentUpgrades(false);
+    }
+
+    public resetRunMaxHpPenalty(): void {
+        this._runMaxHpPenalty = 0;
+        this.applyPersistentUpgrades(false);
     }
 
     private showGameOver(): void {
@@ -382,6 +405,18 @@ export class HomeBaseHealth extends Component {
         }
 
         return null;
+    }
+
+    public applyPersistentUpgrades(fillToMax = false): void {
+        const saveData = SaveDataManager.load();
+        const deskLevel = Math.max(0, Math.floor(saveData.upgrades.desk ?? 0));
+        this.maxHp = Math.max(30, this._baseMaxHp + deskLevel * 10 - this._runMaxHpPenalty);
+        if (fillToMax) {
+            this.currentHp = this.maxHp;
+        } else {
+            this.currentHp = this.clampHp(this.currentHp);
+        }
+        this.updateHpLabel();
     }
 
     private setNodeSize(node: Node, width: number, height: number): void {

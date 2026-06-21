@@ -49,6 +49,9 @@ export class WaveController extends Component {
     public fifthWaveMonsterCount = 22;
 
     @property
+    public endlessExtraMonsterPerWave = 3;
+
+    @property
     public maxWave = 5;
 
     @property
@@ -94,6 +97,7 @@ export class WaveController extends Component {
 
     public resetWaves(): void {
         this._currentWave = 1;
+        this.getSkillChoiceView()?.resetSkillEffects();
         this.setupIntermissionHandlers();
         this.waveIntermissionView?.hide();
         this.skillChoiceView?.hide();
@@ -118,6 +122,7 @@ export class WaveController extends Component {
         }
 
         this._currentWave = 1;
+        this.getSkillChoiceView()?.resetSkillEffects();
         this.startCurrentWave();
     }
 
@@ -135,13 +140,14 @@ export class WaveController extends Component {
         this.skillChoiceView?.hide();
         this.victoryResultController?.hide();
         this.updateWaveLabel();
+        this.getSkillChoiceView()?.applyNextWaveStartEffects();
         BgmController.playBgm(this.node, 'battle');
         SfxController.playSfx(this.node, this._currentWave >= 4 ? 'wave_start_fast' : 'wave_start');
         this.monsterSpawner.startWave(this.getCurrentWaveMonsterCount(), this._currentWave);
     }
 
     public startNextWave(): void {
-        if (this.homeBaseHealth?.isGameOver || !this._waitingForNextWave || this._currentWave >= this.maxWave) {
+        if (this.homeBaseHealth?.isGameOver || !this._waitingForNextWave) {
             return;
         }
 
@@ -152,8 +158,9 @@ export class WaveController extends Component {
     private enterIntermission(): void {
         this._waveComplete = true;
         this._waitingForNextWave = true;
+        this.homeBaseHealth?.resetShield();
 
-        if (this._currentWave >= this.maxWave) {
+        if (false && this._currentWave >= this.maxWave) {
             this._waitingForNextWave = false;
             this.waveIntermissionView?.hide();
             this.skillChoiceView?.hide();
@@ -205,7 +212,11 @@ export class WaveController extends Component {
             return this.skillChoiceView;
         }
 
-        const panel = this.node.getChildByName('WaveIntermissionPanel');
+        const canvas = this.findAncestorByName(this.node, 'Canvas');
+        const battleHud = canvas?.getChildByName('BattleHUD') ?? null;
+        const panel = this.node.getChildByName('WaveIntermissionPanel')
+            ?? battleHud?.getChildByName('WaveIntermissionPanel')
+            ?? null;
         this.skillChoiceView = this.findComponentWithAnyMethod<SkillChoiceView>(panel, ['show', 'hide']);
         return this.skillChoiceView;
     }
@@ -231,7 +242,11 @@ export class WaveController extends Component {
             return this.fifthWaveMonsterCount;
         }
 
-        return this.secondWaveMonsterCount;
+        const endlessWaveOffset = Math.max(0, this._currentWave - 5);
+        const baseCount = this.fifthWaveMonsterCount + endlessWaveOffset * this.endlessExtraMonsterPerWave;
+        const pressureBonus = Math.floor(Math.max(0, this._currentWave - 1) / 3);
+        const tenWaveBonus = Math.floor(Math.max(0, this._currentWave) / 10) * 2;
+        return baseCount + pressureBonus + tenWaveBonus;
     }
 
     private setupStartPanelController(): boolean {

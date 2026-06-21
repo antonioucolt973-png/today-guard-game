@@ -67,18 +67,18 @@ export class SkillChoiceView extends Component {
     }
 
     public show(currentWave: number): void {
+        const targetPanel = this.getPanel();
+        targetPanel.active = true;
         this._canChoose = true;
         GameState.isSkillTriggered = true;
         GameState.destroyAllBullets(this.findBulletLayer());
+        this.getSkillEffectController()?.clearWaveOnlyEffects();
         this.getSkillEffectController()?.clearTemporaryEffects();
         this.refreshRandomChoices();
         this.applyReadableLayout();
         this.updateText(currentWave);
         this.setButtonsInteractable(true);
         this.hideLegacyNextWaveButton();
-
-        const targetPanel = this.getPanel();
-        targetPanel.active = true;
     }
 
     public hide(): void {
@@ -88,6 +88,14 @@ export class SkillChoiceView extends Component {
 
         const targetPanel = this.getPanel();
         targetPanel.active = false;
+    }
+
+    public applyNextWaveStartEffects(): void {
+        this.getSkillEffectController()?.applyNextWaveStartEffects();
+    }
+
+    public resetSkillEffects(): void {
+        this.getSkillEffectController()?.resetEffects();
     }
 
     private updateText(currentWave: number): void {

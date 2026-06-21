@@ -66,7 +66,12 @@ export class BasicMonsterSpawner extends Component {
     private _currentWave = 1;
     private _waveSpawning = false;
     private _monsterSpeedMultiplier = 1;
+    private _nextWaveMonsterSpeedMultiplier = 1;
+    private _currentWaveMonsterSpeedMultiplier = 1;
     private _nextWaveSpawnIntervalMultiplier = 1;
+    private _nextWaveOpeningFreezeSeconds = 0;
+    private _currentWaveOpeningFreezeSeconds = 0;
+    private _waveStartTimeMs = 0;
     private readonly _hasPlayedIntroSfx = new Set<MonsterKind>();
 
     public get isWaveSpawnComplete(): boolean {
@@ -103,6 +108,9 @@ export class BasicMonsterSpawner extends Component {
         this._targetSpawnCount = Math.max(0, Math.floor(monsterCount));
         this._spawnedCount = 0;
         this._currentWave = Math.max(1, Math.floor(waveNumber));
+        this._currentWaveMonsterSpeedMultiplier = this._nextWaveMonsterSpeedMultiplier;
+        this._currentWaveOpeningFreezeSeconds = this._nextWaveOpeningFreezeSeconds;
+        this._waveStartTimeMs = Date.now();
 
         if (this._targetSpawnCount <= 0) {
             this._waveSpawning = false;
@@ -115,6 +123,8 @@ export class BasicMonsterSpawner extends Component {
             this.schedule(this.spawnMonster, this.getCurrentSpawnInterval());
         }
         this._nextWaveSpawnIntervalMultiplier = 1;
+        this._nextWaveMonsterSpeedMultiplier = 1;
+        this._nextWaveOpeningFreezeSeconds = 0;
     }
 
     public applyMonsterSpeedMultiplier(multiplier: number): void {
@@ -133,9 +143,29 @@ export class BasicMonsterSpawner extends Component {
         this._nextWaveSpawnIntervalMultiplier = Math.min(1.6, this._nextWaveSpawnIntervalMultiplier * multiplier);
     }
 
+    public applyNextWaveMonsterSpeedMultiplier(multiplier: number): void {
+        if (multiplier <= 0) {
+            return;
+        }
+
+        this._nextWaveMonsterSpeedMultiplier = Math.max(0.7, this._nextWaveMonsterSpeedMultiplier * multiplier);
+    }
+
+    public applyNextWaveOpeningFreeze(seconds: number): void {
+        if (seconds <= 0) {
+            return;
+        }
+
+        this._nextWaveOpeningFreezeSeconds = Math.max(this._nextWaveOpeningFreezeSeconds, seconds);
+    }
+
     public resetSkillModifiers(): void {
         this._monsterSpeedMultiplier = 1;
+        this._nextWaveMonsterSpeedMultiplier = 1;
+        this._currentWaveMonsterSpeedMultiplier = 1;
         this._nextWaveSpawnIntervalMultiplier = 1;
+        this._nextWaveOpeningFreezeSeconds = 0;
+        this._currentWaveOpeningFreezeSeconds = 0;
     }
 
     private stopSpawning(): void {
@@ -162,7 +192,7 @@ export class BasicMonsterSpawner extends Component {
         const monster = monsterNode.addComponent(BasicMonster);
         monster.setup(
             this.homeBase,
-            this.monsterSpeed * config.speedMultiplier * this._monsterSpeedMultiplier,
+            this.monsterSpeed * config.speedMultiplier * this._monsterSpeedMultiplier * this._currentWaveMonsterSpeedMultiplier,
             config.size,
             config.color,
             config.damage,
@@ -170,6 +200,10 @@ export class BasicMonsterSpawner extends Component {
             config.artPath,
             config.spriteFrame,
         );
+        const freezeSeconds = this.getOpeningFreezeRemainingSeconds();
+        if (freezeSeconds > 0) {
+            monster.freezeForSeconds(freezeSeconds);
+        }
         this.playMonsterIntroSfx(config.kind);
 
         this.homeBase.getWorldPosition(this._homeWorldPosition);
@@ -256,7 +290,17 @@ export class BasicMonsterSpawner extends Component {
             return 1.3;
         }
 
-        return 1.2;
+        const endlessPressure = Math.floor(Math.max(0, this._currentWave - 6) / 4) * 0.08;
+        return Math.max(0.85, 1.2 - endlessPressure);
+    }
+
+    private getOpeningFreezeRemainingSeconds(): number {
+        if (this._currentWaveOpeningFreezeSeconds <= 0 || this._waveStartTimeMs <= 0) {
+            return 0;
+        }
+
+        const elapsedSeconds = Math.max(0, (Date.now() - this._waveStartTimeMs) / 1000);
+        return Math.max(0, this._currentWaveOpeningFreezeSeconds - elapsedSeconds);
     }
 
     private getMonsterKindForCurrentSpawn(): MonsterKind {
@@ -292,6 +336,18 @@ export class BasicMonsterSpawner extends Component {
             return 'normal';
         }
 
+        if (this._currentWave >= 10) {
+            if (this._spawnedCount % 7 === 3 || this._spawnedCount % 11 === 8) {
+                return 'tough';
+            }
+
+            if (this._spawnedCount % 5 === 1 || this._spawnedCount % 9 === 5) {
+                return 'fast';
+            }
+
+            return 'normal';
+        }
+
         if (this._spawnedCount === 3 || this._spawnedCount === 8 || this._spawnedCount === 13 || this._spawnedCount === 18) {
             return 'tough';
         }
@@ -304,11 +360,13 @@ export class BasicMonsterSpawner extends Component {
     }
 
     private getMonsterConfig(kind: MonsterKind): MonsterConfig {
+        const hpMultiplier = this.getEndlessHpMultiplier();
+        const speedMultiplier = this.getEndlessSpeedMultiplier();
         if (kind === 'tough') {
             return {
                 kind,
-                speedMultiplier: 0.78,
-                hp: this._currentWave >= 5 ? 4 : 3,
+                speedMultiplier: 0.78 * speedMultiplier,
+                hp: Math.max(1, Math.ceil((this._currentWave >= 5 ? 4 : 3) * hpMultiplier)),
                 damage: 8,
                 size: this.monsterSize + 8,
                 color: new Color(150, 90, 220, 255),
@@ -320,8 +378,8 @@ export class BasicMonsterSpawner extends Component {
         if (kind === 'fast') {
             return {
                 kind,
-                speedMultiplier: 1.35,
-                hp: 1,
+                speedMultiplier: 1.35 * speedMultiplier,
+                hp: Math.max(1, Math.ceil(1 * hpMultiplier)),
                 damage: 5,
                 size: this.monsterSize - 4,
                 color: new Color(238, 170, 70, 255),
@@ -332,14 +390,26 @@ export class BasicMonsterSpawner extends Component {
 
         return {
             kind,
-            speedMultiplier: 1,
-            hp: this._currentWave <= 2 ? 1 : 2,
+            speedMultiplier,
+            hp: Math.max(1, Math.ceil((this._currentWave <= 2 ? 1 : 2) * hpMultiplier)),
             damage: this.monsterDamage,
             size: this.monsterSize,
             color: this.monsterColor,
             artPath: 'art/monsters/monster_neihao',
             spriteFrame: this.monsterNeihaoSprite,
         };
+    }
+
+    private getEndlessHpMultiplier(): number {
+        const endlessWaveOffset = Math.max(0, this._currentWave - 5);
+        const tenWaveBonus = Math.floor(Math.max(0, this._currentWave) / 10) * 0.15;
+        return 1 + endlessWaveOffset * 0.1 + tenWaveBonus;
+    }
+
+    private getEndlessSpeedMultiplier(): number {
+        const endlessWaveOffset = Math.max(0, this._currentWave - 5);
+        const tenWaveBonus = Math.floor(Math.max(0, this._currentWave) / 10) * 0.04;
+        return Math.min(1.6, 1 + endlessWaveOffset * 0.025 + tenWaveBonus);
     }
 
     private playMonsterIntroSfx(kind: MonsterKind): void {

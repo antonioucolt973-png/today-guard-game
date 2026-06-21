@@ -48,6 +48,7 @@ export class BasicMonster extends Component {
     private readonly _direction = new Vec3();
     private _stopped = false;
     private _defeated = false;
+    private _freezeTimer = 0;
 
     public setup(
         target: Node,
@@ -86,6 +87,14 @@ export class BasicMonster extends Component {
         return false;
     }
 
+    public freezeForSeconds(seconds: number): void {
+        if (seconds <= 0 || this._defeated || this._stopped) {
+            return;
+        }
+
+        this._freezeTimer = Math.max(this._freezeTimer, seconds);
+    }
+
     private markDefeated(): boolean {
         if (this._stopped || this._defeated) {
             return false;
@@ -108,6 +117,11 @@ export class BasicMonster extends Component {
         }
 
         this.keepVisualVisible();
+
+        if (this._freezeTimer > 0) {
+            this._freezeTimer = Math.max(0, this._freezeTimer - deltaTime);
+            return;
+        }
 
         const targetHealth = this.findHomeBaseHealth(this.target);
         if (targetHealth?.isGameOver) {

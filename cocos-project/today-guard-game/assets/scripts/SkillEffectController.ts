@@ -2,26 +2,31 @@ import { _decorator, Component, Node } from 'cc';
 import { BasicMonsterSpawner } from './BasicMonsterSpawner';
 import { HomeBaseHealth } from './HomeBaseHealth';
 import { PlayerAutoAttack } from './PlayerAutoAttack';
+import { SaveDataManager } from './SaveDataManager';
+import { SkillRuntimeState, SkillTag } from './SkillRuntimeState';
 
 const { ccclass, property } = _decorator;
 
 export type SkillEffectId =
-    | 'drink_water'
-    | 'countdown_offwork'
-    | 'no_more_blame'
     | 'keyboard_fire'
-    | 'slacking_shield'
-    | 'reject_overthinking'
-    | 'take_it_slow'
-    | 'super_efficiency';
+    | 'fast_hands'
+    | 'slacking_heal'
+    | 'overtime_shield'
+    | 'meeting_pause'
+    | 'process_stuck'
+    | 'risky_overtime'
+    | 'boss_promise';
 
-export type SkillCategory = 'output' | 'defense' | 'control';
+export type SkillTiming = 'instant' | 'nextWave' | 'passive';
 
 export type SkillChoice = {
     id: SkillEffectId;
     name: string;
     description: string;
-    category: SkillCategory;
+    tag: SkillTag;
+    timing: SkillTiming;
+    maxStacks: number;
+    allowConsecutive: boolean;
 };
 
 @ccclass('SkillEffectController')
@@ -36,149 +41,210 @@ export class SkillEffectController extends Component {
     public monsterSpawner: BasicMonsterSpawner | null = null;
 
     @property
-    public healAmount = 25;
+    public healAmount = 18;
 
     @property
-    public attackIntervalMultiplier = 0.9;
+    public attackIntervalMultiplier = 0.94;
 
     @property
-    public damageReductionRate = 0.15;
-
-    @property
-    public shieldAmount = 16;
-
-    @property
-    public bulletHitBonus = 0;
+    public shieldAmount = 20;
 
     @property
     public bulletDamageBonus = 1;
 
     @property
-    public monsterSpeedMultiplier = 0.9;
+    public nextWaveMonsterSpeedMultiplier = 0.82;
 
     @property
-    public nextWaveSpawnIntervalMultiplier = 1.25;
+    public meetingFreezeSeconds = 3;
 
     @property
-    public burstAttackIntervalMultiplier = 0.7;
+    public greedCoinBonusRate = 0.25;
+
+    @property
+    public greedMonsterSpeedPenalty = 0.15;
+
+    @property
+    public bossPromiseCoins = 25;
+
+    @property
+    public bossPromiseMaxHpPenalty = 15;
+
+    private _lastAppliedSkillId: SkillEffectId | null = null;
+    private readonly _skillStacks = new Map<SkillEffectId, number>();
 
     private readonly _skillPool: SkillChoice[] = [
         {
-            id: 'drink_water',
-            name: '喝口水冷静一下',
-            description: '恢复 25 点精神值',
-            category: 'defense',
-        },
-        {
-            id: 'countdown_offwork',
-            name: '下班倒计时',
-            description: '长期小幅提升发射频率',
-            category: 'output',
-        },
-        {
-            id: 'no_more_blame',
-            name: '今日不接锅',
-            description: '小屋受伤降低，可叠加最高 50%',
-            category: 'defense',
-        },
-        {
             id: 'keyboard_fire',
             name: '键盘冒火',
-            description: '子弹更疼，厚皮怪更快被打掉',
-            category: 'output',
+            description: '本局子弹伤害 +1',
+            tag: 'keyboard',
+            timing: 'passive',
+            maxStacks: 12,
+            allowConsecutive: true,
         },
         {
-            id: 'slacking_shield',
-            name: '摸鱼护盾',
-            description: '获得护盾抵消部分伤害',
-            category: 'defense',
+            id: 'fast_hands',
+            name: '手速上线',
+            description: '本局攻击间隔缩短',
+            tag: 'keyboard',
+            timing: 'passive',
+            maxStacks: 10,
+            allowConsecutive: true,
         },
         {
-            id: 'reject_overthinking',
-            name: '拒绝内耗',
-            description: '后续新怪移动速度降低',
-            category: 'control',
+            id: 'slacking_heal',
+            name: '摸鱼回血',
+            description: '立刻恢复精神值',
+            tag: 'survival',
+            timing: 'instant',
+            maxStacks: 99,
+            allowConsecutive: true,
         },
         {
-            id: 'take_it_slow',
-            name: '先缓一缓',
-            description: '下一波怪物生成变慢',
-            category: 'control',
+            id: 'overtime_shield',
+            name: '加班护盾',
+            description: '下一波开始获得护盾',
+            tag: 'survival',
+            timing: 'nextWave',
+            maxStacks: 99,
+            allowConsecutive: true,
         },
         {
-            id: 'super_efficiency',
-            name: '今天效率爆表',
-            description: '下一波内明显提升发射频率',
-            category: 'output',
+            id: 'meeting_pause',
+            name: '主管开会',
+            description: '下一波前 3 秒，怪物生成但不移动',
+            tag: 'survival',
+            timing: 'nextWave',
+            maxStacks: 99,
+            allowConsecutive: false,
+        },
+        {
+            id: 'process_stuck',
+            name: '流程卡住',
+            description: '下一波怪物速度降低',
+            tag: 'control',
+            timing: 'nextWave',
+            maxStacks: 99,
+            allowConsecutive: true,
+        },
+        {
+            id: 'risky_overtime',
+            name: '今天想不开',
+            description: '摸鱼币增加，但怪物更快',
+            tag: 'greed',
+            timing: 'passive',
+            maxStacks: 6,
+            allowConsecutive: true,
+        },
+        {
+            id: 'boss_promise',
+            name: '老板画饼',
+            description: '立刻得摸鱼币，本局精神上限降低',
+            tag: 'greed',
+            timing: 'instant',
+            maxStacks: 3,
+            allowConsecutive: true,
         },
     ];
-
     public getRandomSkillChoices(count: number): SkillChoice[] {
-        const pool = [...this._skillPool];
+        const pool = this._skillPool.filter((choice) => this.canOfferSkill(choice));
         const result: SkillChoice[] = [];
         const targetCount = Math.max(0, Math.min(count, pool.length));
 
         if (targetCount >= 3) {
-            this.pickOneByCategory(pool, result, 'output');
-            this.pickOneByCategory(pool, result, 'defense');
-            this.pickOneByCategory(pool, result, 'control');
+            this.pickOneByTag(pool, result, ['keyboard', 'control']);
+            this.pickOneByTag(pool, result, ['survival']);
+            this.pickOneByTag(pool, result, ['greed', 'keyboard', 'control', 'survival']);
         }
 
         while (result.length < targetCount && pool.length > 0) {
             this.pickRandom(pool, result);
         }
 
-        return this.shuffle(result);
+        return this.shuffle(result.map((choice) => this.withBalancedDescription(choice)));
     }
 
     public applySkill(skillId: SkillEffectId): void {
         this.resolveMissingReferences();
-
-        if (skillId === 'drink_water') {
-            this.homeBaseHealth?.heal(this.healAmount);
-            return;
-        }
-
-        if (skillId === 'countdown_offwork') {
-            this.playerAutoAttack?.applyAttackIntervalMultiplier(this.attackIntervalMultiplier);
-            return;
-        }
-
-        if (skillId === 'no_more_blame') {
-            this.homeBaseHealth?.addDamageReduction(this.damageReductionRate);
+        const skill = this._skillPool.find((choice) => choice.id === skillId);
+        if (!skill || !this.canApplySkill(skill)) {
             return;
         }
 
         if (skillId === 'keyboard_fire') {
-            this.playerAutoAttack?.addBulletHitBonus(this.bulletHitBonus);
-            this.playerAutoAttack?.addBulletDamageBonus(this.bulletDamageBonus);
-            return;
+            const stackBefore = this.getSkillStackCount(skillId);
+            const damageBonus = this.getKeyboardDamageBonus(stackBefore);
+            const hitBonus = this.getKeyboardHitBonus(stackBefore);
+            if (damageBonus > 0) {
+                this.playerAutoAttack?.addBulletDamageBonus(damageBonus);
+            }
+            if (hitBonus > 0) {
+                this.playerAutoAttack?.addBulletHitBonus(hitBonus);
+            }
         }
 
-        if (skillId === 'slacking_shield') {
-            this.homeBaseHealth?.addShield(this.shieldAmount);
-            return;
+        if (skillId === 'fast_hands') {
+            this.playerAutoAttack?.applyAttackIntervalMultiplier(this.getFastHandsMultiplier(this.getSkillStackCount(skillId)));
         }
 
-        if (skillId === 'reject_overthinking') {
-            this.monsterSpawner?.applyMonsterSpeedMultiplier(this.monsterSpeedMultiplier);
-            return;
+        if (skillId === 'slacking_heal') {
+            this.homeBaseHealth?.heal(this.healAmount);
         }
 
-        if (skillId === 'take_it_slow') {
-            this.monsterSpawner?.applyNextWaveSpawnIntervalMultiplier(this.nextWaveSpawnIntervalMultiplier);
-            return;
+        if (skillId === 'overtime_shield') {
+            SkillRuntimeState.nextWaveShield = Math.min(40, SkillRuntimeState.nextWaveShield + this.getOvertimeShieldAmount());
         }
 
-        if (skillId === 'super_efficiency') {
-            this.playerAutoAttack?.applyTemporaryAttackIntervalMultiplier(this.burstAttackIntervalMultiplier);
+        if (skillId === 'meeting_pause') {
+            SkillRuntimeState.nextWaveFreezeSeconds = Math.max(SkillRuntimeState.nextWaveFreezeSeconds, this.meetingFreezeSeconds);
+        }
+
+        if (skillId === 'process_stuck') {
+            SkillRuntimeState.nextWaveMonsterSpeedMultiplier = Math.max(0.7, SkillRuntimeState.nextWaveMonsterSpeedMultiplier * this.nextWaveMonsterSpeedMultiplier);
+        }
+
+        if (skillId === 'risky_overtime') {
+            SkillRuntimeState.coinBonusRate = Math.min(0.6, SkillRuntimeState.coinBonusRate + this.greedCoinBonusRate);
+            SkillRuntimeState.monsterSpeedPenaltyRate = Math.min(0.6, SkillRuntimeState.monsterSpeedPenaltyRate + this.greedMonsterSpeedPenalty);
+            this.monsterSpawner?.applyMonsterSpeedMultiplier(1 + this.greedMonsterSpeedPenalty);
+        }
+
+        if (skillId === 'boss_promise') {
+            SaveDataManager.addCoins(this.bossPromiseCoins);
+            SkillRuntimeState.maxHpPenalty += this.bossPromiseMaxHpPenalty;
+            this.homeBaseHealth?.applyRunMaxHpPenalty(this.bossPromiseMaxHpPenalty);
+        }
+
+        this.recordSkill(skill);
+    }
+
+    public applyNextWaveStartEffects(): void {
+        this.resolveMissingReferences();
+        const shield = SkillRuntimeState.consumeNextWaveShield();
+        if (shield > 0) {
+            this.homeBaseHealth?.addShield(shield);
+        }
+
+        const speedMultiplier = SkillRuntimeState.consumeNextWaveMonsterSpeedMultiplier();
+        if (speedMultiplier !== 1) {
+            this.monsterSpawner?.applyNextWaveMonsterSpeedMultiplier(speedMultiplier);
+        }
+
+        const freezeSeconds = SkillRuntimeState.consumeNextWaveFreezeSeconds();
+        if (freezeSeconds > 0) {
+            this.monsterSpawner?.applyNextWaveOpeningFreeze(freezeSeconds);
         }
     }
 
     public resetEffects(): void {
         this.resolveMissingReferences();
+        SkillRuntimeState.resetRun();
+        this._lastAppliedSkillId = null;
+        this._skillStacks.clear();
         this.homeBaseHealth?.resetDamageReduction();
         this.homeBaseHealth?.resetShield();
+        this.homeBaseHealth?.resetRunMaxHpPenalty();
         this.playerAutoAttack?.resetAttackInterval();
         this.playerAutoAttack?.resetBulletHitBonus();
         this.playerAutoAttack?.resetBulletDamageBonus();
@@ -190,10 +256,15 @@ export class SkillEffectController extends Component {
         this.playerAutoAttack?.clearTemporaryAttackBoost();
     }
 
-    private pickOneByCategory(pool: SkillChoice[], result: SkillChoice[], category: SkillCategory): void {
+    public clearWaveOnlyEffects(): void {
+        this.resolveMissingReferences();
+        this.homeBaseHealth?.resetShield();
+    }
+
+    private pickOneByTag(pool: SkillChoice[], result: SkillChoice[], tags: SkillTag[]): void {
         const candidates = pool
             .map((choice, index) => ({ choice, index }))
-            .filter((entry) => entry.choice.category === category);
+            .filter((entry) => tags.includes(entry.choice.tag));
         if (candidates.length <= 0) {
             return;
         }
@@ -203,6 +274,102 @@ export class SkillEffectController extends Component {
         if (choice) {
             result.push(choice);
         }
+    }
+
+    private canOfferSkill(choice: SkillChoice): boolean {
+        if (!choice.allowConsecutive && this._lastAppliedSkillId === choice.id) {
+            return false;
+        }
+
+        if (!this.isPendingNextWaveSkillAvailable(choice.id)) {
+            return false;
+        }
+
+        return this.getSkillStackCount(choice.id) < choice.maxStacks;
+    }
+
+    private canApplySkill(choice: SkillChoice): boolean {
+        return this.isPendingNextWaveSkillAvailable(choice.id) && this.getSkillStackCount(choice.id) < choice.maxStacks;
+    }
+
+    private recordSkill(choice: SkillChoice): void {
+        this._lastAppliedSkillId = choice.id;
+        this._skillStacks.set(choice.id, this.getSkillStackCount(choice.id) + 1);
+        const triggeredSynergy = SkillRuntimeState.addTag(choice.tag);
+        if (!triggeredSynergy) {
+            return;
+        }
+
+        if (choice.tag === 'keyboard') {
+            this.playerAutoAttack?.addBulletHitBonus(6);
+            return;
+        }
+
+        if (choice.tag === 'survival') {
+            this.homeBaseHealth?.heal(5);
+            return;
+        }
+
+        if (choice.tag === 'control') {
+            SkillRuntimeState.nextWaveMonsterSpeedMultiplier = Math.max(0.7, SkillRuntimeState.nextWaveMonsterSpeedMultiplier * 0.95);
+            return;
+        }
+
+        SkillRuntimeState.coinBonusRate = Math.min(0.6, SkillRuntimeState.coinBonusRate + 0.1);
+        SkillRuntimeState.monsterSpeedPenaltyRate = Math.min(0.6, SkillRuntimeState.monsterSpeedPenaltyRate + 0.08);
+        this.monsterSpawner?.applyMonsterSpeedMultiplier(1.08);
+    }
+
+    private getSkillStackCount(skillId: SkillEffectId): number {
+        return this._skillStacks.get(skillId) ?? 0;
+    }
+
+    private getOvertimeShieldAmount(): number {
+        return Math.max(20, Math.floor(this.shieldAmount));
+    }
+
+    private getKeyboardDamageBonus(stackBefore: number): number {
+        if (stackBefore < 3) {
+            return this.bulletDamageBonus;
+        }
+
+        return stackBefore === 6 || stackBefore === 10 ? this.bulletDamageBonus : 0;
+    }
+
+    private getKeyboardHitBonus(stackBefore: number): number {
+        if (stackBefore < 3) {
+            return 0;
+        }
+
+        return stackBefore < 8 ? 4 : 2;
+    }
+
+    private getFastHandsMultiplier(stackBefore: number): number {
+        if (stackBefore < 3) {
+            return this.attackIntervalMultiplier;
+        }
+
+        if (stackBefore < 6) {
+            return 0.97;
+        }
+
+        return 0.985;
+    }
+
+    private isPendingNextWaveSkillAvailable(skillId: SkillEffectId): boolean {
+        if (skillId === 'overtime_shield') {
+            return SkillRuntimeState.nextWaveShield < 40;
+        }
+
+        if (skillId === 'meeting_pause') {
+            return SkillRuntimeState.nextWaveFreezeSeconds <= 0;
+        }
+
+        if (skillId === 'process_stuck') {
+            return SkillRuntimeState.nextWaveMonsterSpeedMultiplier > 0.75;
+        }
+
+        return true;
     }
 
     private pickRandom(pool: SkillChoice[], result: SkillChoice[]): void {
@@ -224,6 +391,64 @@ export class SkillEffectController extends Component {
         return result;
     }
 
+    private withBalancedDescription(choice: SkillChoice): SkillChoice {
+        return {
+            ...choice,
+            description: this.getBalancedDescription(choice),
+        };
+    }
+
+    private getBalancedDescription(choice: SkillChoice): string {
+        const skillId = choice.id;
+        const currentStack = this.getSkillStackCount(skillId);
+        const nextLevel = currentStack + 1;
+
+        if (skillId === 'keyboard_fire') {
+            if (currentStack < 3) {
+                return `Lv.${nextLevel}/${choice.maxStacks}：子弹伤害 +1`;
+            }
+
+            if (currentStack === 6 || currentStack === 10) {
+                return `Lv.${nextLevel}/${choice.maxStacks}：子弹伤害 +1，命中容错小幅提升`;
+            }
+
+            return `Lv.${nextLevel}/${choice.maxStacks}：命中容错提升，后期收益递减`;
+        }
+
+        if (skillId === 'fast_hands') {
+            if (currentStack < 3) {
+                return `Lv.${nextLevel}/${choice.maxStacks}：攻击间隔再缩短 6%`;
+            }
+
+            if (currentStack < 6) {
+                return `Lv.${nextLevel}/${choice.maxStacks}：攻击间隔再缩短 3%`;
+            }
+
+            return `Lv.${nextLevel}/${choice.maxStacks}：攻击间隔再缩短 1.5%（高等级递减）`;
+        }
+
+        if (skillId === 'slacking_heal') {
+            return '立刻恢复 18 精神值';
+        }
+
+        if (skillId === 'overtime_shield') {
+            return '下一波开始获得 20 护盾，波结束清空';
+        }
+
+        if (skillId === 'meeting_pause') {
+            return '下一波前 3 秒，怪物生成但不移动';
+        }
+
+        if (skillId === 'process_stuck') {
+            return '下一波怪物速度 -18%';
+        }
+
+        if (skillId === 'risky_overtime') {
+            return `Lv.${nextLevel}/${choice.maxStacks}：摸鱼币 +25%，怪物速度 +15%`;
+        }
+
+        return `Lv.${nextLevel}/${choice.maxStacks}：立刻获得 25 摸鱼币，本局精神上限 -15`;
+    }
     private resolveMissingReferences(): void {
         if (this.homeBaseHealth && this.playerAutoAttack && this.monsterSpawner) {
             return;

@@ -3,12 +3,19 @@ import { ArtSpriteHelper } from './ArtSpriteHelper';
 import { FeedbackController } from './FeedbackController';
 import { SfxController } from './SfxController';
 import { getExistingComponent, getOrAddComponent } from './ComponentLookup';
+import { SaveDataManager, UpgradeKey } from './SaveDataManager';
 
 const { ccclass, property } = _decorator;
 
 type StartableWaveController = Component & {
     prepareForStartScreen?: () => void;
     startFirstWaveFromStartScreen?: () => void;
+};
+
+type UpgradeViewItem = {
+    key: UpgradeKey;
+    title: string;
+    desc: string;
 };
 
 @ccclass('StartGameController')
@@ -35,7 +42,19 @@ export class StartGameController extends Component {
     public battleBackgroundPath = 'art/ui/battle_bg';
 
     private _buttonBound = false;
+    private _upgradeButton: Button | null = null;
+    private _tutorialButton: Button | null = null;
+    private _upgradeButtonBound = false;
+    private _tutorialButtonBound = false;
     private _preloadedFirstWaveAssets = false;
+    private _lastUpgradeMessage = '';
+    private _confirmResetSave = false;
+
+    private readonly upgradeItems: UpgradeViewItem[] = [
+        { key: 'keyboard', title: '键盘强化', desc: '键帽打得更痛。' },
+        { key: 'coffee', title: '咖啡补给', desc: '守卫出手更快。' },
+        { key: 'desk', title: '精神工位', desc: '精神值上限更高。' },
+    ];
 
     protected start(): void {
         this.setupStartPanel();
@@ -47,6 +66,7 @@ export class StartGameController extends Component {
 
     protected onDisable(): void {
         this.unbindStartButton();
+        this.unbindMenuButtons();
     }
 
     public initializeFromWaveController(waveController: Component, startPanel: Node): void {
@@ -64,7 +84,7 @@ export class StartGameController extends Component {
         this.drawPanelBackground(panel);
         this.ensureBattleLayerBackdrop(panel);
 
-        this.titleLabel = this.titleLabel ?? this.getOrCreateLabel(
+        this.titleLabel = this.getOrCreateLabel(
             'TitleLabel',
             '今天也要守住',
             38,
@@ -73,24 +93,27 @@ export class StartGameController extends Component {
             Math.min(panelSize.width - 120, 680),
             68,
         );
-        this.descLabel = this.descLabel ?? this.getOrCreateLabel(
+        this.descLabel = this.getOrCreateLabel(
             'DescLabel',
-            '守住小屋，击退压力怪。\n每波结束选择一个办法，撑过 5 波就算胜利。',
+            '守住小屋，击退压力怪。\n每波结束选择一个办法，看看今天能撑到第几波。',
             22,
             34,
             24,
             Math.min(panelSize.width - 120, 720),
             116,
         );
-        this.startButton = this.startButton ?? this.getOrCreateStartButton();
+        this.startButton = this.getOrCreateStartButton();
+        this.getOrCreateMenuButtons();
 
         this.getWaveController()?.prepareForStartScreen?.();
         this.preloadFirstWaveAssets();
         this.bindStartButton();
+        this.bindMenuButtons();
     }
 
     private handleStartClicked(): void {
         FeedbackController.getForNode(this.node)?.playClickFeedback(this.startButton?.node ?? this.node);
+        this.applySavedUpgradesBeforeBattle();
         this.unbindStartButton();
         this.getStartPanel().active = false;
         this.scheduleOnce(() => {
@@ -151,6 +174,40 @@ export class StartGameController extends Component {
         this._buttonBound = false;
     }
 
+    private bindMenuButtons(): void {
+        if (this._upgradeButton && !this._upgradeButtonBound) {
+            this._upgradeButton.node.on(Button.EventType.CLICK, this.handleUpgradeClicked, this);
+            this._upgradeButtonBound = true;
+        }
+
+        if (this._tutorialButton && !this._tutorialButtonBound) {
+            this._tutorialButton.node.on(Button.EventType.CLICK, this.handleTutorialClicked, this);
+            this._tutorialButtonBound = true;
+        }
+    }
+
+    private unbindMenuButtons(): void {
+        if (this._upgradeButton && this._upgradeButtonBound) {
+            this._upgradeButton.node.off(Button.EventType.CLICK, this.handleUpgradeClicked, this);
+            this._upgradeButtonBound = false;
+        }
+
+        if (this._tutorialButton && this._tutorialButtonBound) {
+            this._tutorialButton.node.off(Button.EventType.CLICK, this.handleTutorialClicked, this);
+            this._tutorialButtonBound = false;
+        }
+    }
+
+    private handleUpgradeClicked(): void {
+        FeedbackController.getForNode(this.node)?.playClickFeedback(this._upgradeButton?.node ?? this.node);
+        this.showUpgradePanel();
+    }
+
+    private handleTutorialClicked(): void {
+        FeedbackController.getForNode(this.node)?.playClickFeedback(this._tutorialButton?.node ?? this.node);
+        this.showTutorialPanel();
+    }
+
     private getStartPanel(): Node {
         this.startPanel = this.startPanel ?? this.node;
         return this.startPanel;
@@ -192,17 +249,30 @@ export class StartGameController extends Component {
 
     private getOrCreateStartButton(): Button {
         const panel = this.getStartPanel();
-        let buttonNode = panel.getChildByName('StartButton');
+        const panelSize = this.getStartPanelSize(panel);
+        return this.getOrCreateMenuButton('StartButton', '开始上班', 0, -panelSize.height * 0.24, 220, 66, new Color(82, 132, 255, 255));
+    }
+
+    private getOrCreateMenuButtons(): void {
+        const panel = this.getStartPanel();
+        const panelSize = this.getStartPanelSize(panel);
+        const y = -panelSize.height * 0.24;
+        this._upgradeButton = this.getOrCreateMenuButton('UpgradeButton', '升级工位', -245, y, 200, 62, new Color(255, 184, 76, 255));
+        this._tutorialButton = this.getOrCreateMenuButton('TutorialButton', '玩法说明', 245, y, 200, 62, new Color(82, 186, 160, 255));
+    }
+
+    private getOrCreateMenuButton(name: string, text: string, x: number, y: number, width: number, height: number, color: Color): Button {
+        const panel = this.getStartPanel();
+        let buttonNode = panel.getChildByName(name);
         if (!buttonNode) {
-            buttonNode = new Node('StartButton');
+            buttonNode = new Node(name);
             buttonNode.layer = panel.layer;
             panel.addChild(buttonNode);
         }
 
-        const panelSize = this.getStartPanelSize(panel);
-        buttonNode.setPosition(0, -panelSize.height * 0.22, 0);
-        this.setNodeSize(buttonNode, 240, 72);
-        this.drawButtonBackground(buttonNode);
+        buttonNode.setPosition(x, y, 0);
+        this.setNodeSize(buttonNode, width, height);
+        this.drawButtonBackground(buttonNode, width, height, color);
 
         const button = getOrAddComponent(buttonNode, Button);
         button.interactable = true;
@@ -215,16 +285,299 @@ export class StartGameController extends Component {
         }
 
         labelNode.setPosition(0, 0, 0);
-        this.setNodeSize(labelNode, 220, 60);
+        this.setNodeSize(labelNode, width - 20, height - 12);
         const label = getOrAddComponent(labelNode, Label);
-        label.string = '开始守住';
-        label.fontSize = 26;
-        label.lineHeight = 34;
+        label.string = text;
+        label.fontSize = name === 'StartButton' ? 26 : 23;
+        label.lineHeight = 32;
         label.color = new Color(255, 255, 255, 255);
         label.horizontalAlign = 1;
         label.verticalAlign = 1;
 
         return button;
+    }
+
+    private showUpgradePanel(): void {
+        const overlay = this.getOrCreateOverlay('UpgradePanel');
+        this.clearChildren(overlay);
+        this.drawOverlayBackground(overlay, 840, 590);
+
+        const saveData = SaveDataManager.load();
+        this.createPanelLabel(overlay, 'UpgradeTitle', '升级工位', 0, 244, 660, 42, 30, 38, new Color(255, 244, 200, 255));
+        this.createPanelLabel(
+            overlay,
+            'UpgradeCoinLabel',
+            `当前摸鱼币：${saveData.totalCoins}`,
+            0,
+            206,
+            620,
+            32,
+            22,
+            30,
+            new Color(255, 255, 255, 255),
+        );
+        this.createPanelLabel(
+            overlay,
+            'UpgradeMessageLabel',
+            this._lastUpgradeMessage || '升级会立即存档，下一局开始生效。',
+            0,
+            174,
+            660,
+            30,
+            18,
+            24,
+            this._lastUpgradeMessage ? new Color(120, 255, 194, 255) : new Color(208, 220, 240, 255),
+        );
+
+        this.upgradeItems.forEach((item, index) => {
+            const y = 88 - index * 112;
+            const level = saveData.upgrades[item.key] ?? 0;
+            const cost = SaveDataManager.getUpgradeCost(item.key);
+            this.createPanelLabel(
+                overlay,
+                `${item.key}Info`,
+                `${item.title}  Lv.${level}\n${item.desc}\n${this.getUpgradeEffectText(item.key, level)}`,
+                -96,
+                y,
+                520,
+                92,
+                18,
+                24,
+                new Color(40, 44, 56, 255),
+                new Color(255, 249, 232, 244),
+            );
+
+            const buttonText = saveData.totalCoins >= cost ? `升级 ${cost}` : `缺 ${cost}`;
+            const button = this.createPanelButton(
+                overlay,
+                `${item.key}UpgradeButton`,
+                buttonText,
+                280,
+                y,
+                150,
+                60,
+                saveData.totalCoins >= cost ? new Color(255, 184, 76, 255) : new Color(118, 124, 138, 255),
+            );
+            button.interactable = saveData.totalCoins >= cost;
+            button.node.on(Button.EventType.CLICK, () => {
+                const result = SaveDataManager.upgrade(item.key);
+                if (result.success) {
+                    const nextLevel = result.data.upgrades[item.key] ?? level + 1;
+                    this._lastUpgradeMessage = `${item.title} 升到 Lv.${nextLevel}，${this.getUpgradePlainEffectText(item.key, nextLevel)}`;
+                }
+                this.showUpgradePanel();
+            });
+        });
+
+        this.createPanelButton(
+            overlay,
+            'UpgradeResetSaveButton',
+            this._confirmResetSave ? '确认清除' : '清除存档',
+            -270,
+            -254,
+            150,
+            46,
+            this._confirmResetSave ? new Color(210, 88, 88, 255) : new Color(92, 98, 112, 255),
+        ).node.on(Button.EventType.CLICK, () => {
+            if (!this._confirmResetSave) {
+                this._confirmResetSave = true;
+                this._lastUpgradeMessage = '再点一次“确认清除”会重置摸鱼币、历史最佳和升级等级。';
+                this.showUpgradePanel();
+                return;
+            }
+
+            SaveDataManager.reset();
+            this._confirmResetSave = false;
+            this._lastUpgradeMessage = '存档已清除，已回到初始状态。';
+            this.showUpgradePanel();
+        });
+
+        this.createPanelButton(overlay, 'UpgradeCloseButton', '返回', 0, -254, 180, 52, new Color(82, 132, 255, 255))
+            .node.on(Button.EventType.CLICK, () => {
+                this._confirmResetSave = false;
+                overlay.active = false;
+            });
+    }
+
+    private showTutorialPanel(): void {
+        const overlay = this.getOrCreateOverlay('TutorialPanel');
+        this.clearChildren(overlay);
+        this.drawOverlayBackground(overlay, 680, 420);
+
+        SaveDataManager.markTutorialSeen();
+        this.createPanelLabel(overlay, 'TutorialTitle', '玩法说明', 0, 148, 560, 42, 30, 38, new Color(255, 244, 200, 255));
+        this.createPanelLabel(
+            overlay,
+            'TutorialText',
+            '守住左侧工位，击退从右侧涌来的情绪怪。\n每波结束后选择一个办法继续撑下去。\n精神值归零就下班失败；撑得越久，结算获得的摸鱼币越多。\n摸鱼币可以用来升级工位，后续会逐步接入战斗加成。',
+            0,
+            20,
+            560,
+            190,
+            22,
+            34,
+            new Color(255, 255, 255, 255),
+        );
+
+        this.createPanelButton(overlay, 'TutorialCloseButton', '知道了', 0, -148, 180, 52, new Color(82, 132, 255, 255))
+            .node.on(Button.EventType.CLICK, () => {
+                overlay.active = false;
+            });
+    }
+
+    private getUpgradeEffectText(key: UpgradeKey, level: number): string {
+        const currentLevel = Math.max(0, Math.floor(level));
+        const nextLevel = currentLevel + 1;
+        if (key === 'keyboard') {
+            return `子弹伤害：+${currentLevel} → +${nextLevel}`;
+        }
+
+        if (key === 'coffee') {
+            return `攻击间隔：缩短 ${currentLevel * 5}% → ${nextLevel * 5}%`;
+        }
+
+        return `最大精神值：+${currentLevel * 10} → +${nextLevel * 10}`;
+    }
+
+    private getUpgradePlainEffectText(key: UpgradeKey, level: number): string {
+        const safeLevel = Math.max(0, Math.floor(level));
+        if (key === 'keyboard') {
+            return `每发子弹伤害 +${safeLevel}`;
+        }
+
+        if (key === 'coffee') {
+            return `攻击间隔缩短 ${safeLevel * 5}%`;
+        }
+
+        return `最大精神值 +${safeLevel * 10}`;
+    }
+
+    private applySavedUpgradesBeforeBattle(): void {
+        const battleLayer = this.getStartPanel().parent?.getChildByName('BattleLayer') ?? null;
+        const homeBase = battleLayer?.getChildByName('HomeBase') ?? null;
+        const player = battleLayer?.getChildByName('Player') ?? null;
+
+        this.callFirstComponentMethod(homeBase, 'applyPersistentUpgrades', [true]);
+        this.callFirstComponentMethod(player, 'applyPersistentUpgrades');
+    }
+
+    private callFirstComponentMethod(node: Node | null, methodName: string, args: unknown[] = []): void {
+        if (!node) {
+            return;
+        }
+
+        for (const component of node.components) {
+            const candidate = component as Component & Record<string, unknown>;
+            const method = candidate[methodName];
+            if (typeof method === 'function') {
+                method.apply(component, args);
+                return;
+            }
+        }
+    }
+
+    private getOrCreateOverlay(name: string): Node {
+        const panel = this.getStartPanel();
+        let overlay = panel.getChildByName(name);
+        if (!overlay) {
+            overlay = new Node(name);
+            overlay.layer = panel.layer;
+            panel.addChild(overlay);
+        }
+
+        const panelSize = this.getStartPanelSize(panel);
+        overlay.active = true;
+        overlay.setPosition(0, 0, 0);
+        overlay.setSiblingIndex((panel.children.length ?? 1) - 1);
+        this.setNodeSize(overlay, panelSize.width, panelSize.height);
+        return overlay;
+    }
+
+    private drawOverlayBackground(overlay: Node, cardWidth: number, cardHeight: number): void {
+        const transform = getExistingComponent(overlay, UITransform);
+        const width = transform?.width ?? 1280;
+        const height = transform?.height ?? 720;
+        const graphics = getOrAddComponent(overlay, Graphics);
+        graphics.clear();
+        graphics.fillColor = new Color(8, 10, 16, 178);
+        graphics.rect(-width * 0.5, -height * 0.5, width, height);
+        graphics.fill();
+        graphics.fillColor = new Color(28, 34, 48, 248);
+        graphics.roundRect(-cardWidth * 0.5, -cardHeight * 0.5, cardWidth, cardHeight, 20);
+        graphics.fill();
+        graphics.fillColor = new Color(255, 255, 255, 24);
+        graphics.roundRect(-cardWidth * 0.5 + 10, -cardHeight * 0.5 + 10, cardWidth - 20, cardHeight - 20, 16);
+        graphics.fill();
+    }
+
+    private createPanelLabel(
+        parent: Node,
+        name: string,
+        text: string,
+        x: number,
+        y: number,
+        width: number,
+        height: number,
+        fontSize: number,
+        lineHeight: number,
+        color: Color,
+        backgroundColor?: Color,
+    ): Label {
+        const node = new Node(name);
+        node.layer = parent.layer;
+        parent.addChild(node);
+        node.setPosition(x, y, 0);
+        this.setNodeSize(node, width, height);
+
+        let labelNode = node;
+        if (backgroundColor) {
+            const graphics = getOrAddComponent(node, Graphics);
+            graphics.clear();
+            graphics.fillColor = backgroundColor;
+            graphics.roundRect(-width * 0.5, -height * 0.5, width, height, 12);
+            graphics.fill();
+
+            labelNode = new Node(`${name}Label`);
+            labelNode.layer = parent.layer;
+            node.addChild(labelNode);
+            labelNode.setPosition(0, 0, 0);
+            this.setNodeSize(labelNode, width - 24, height - 10);
+        }
+
+        const label = getOrAddComponent(labelNode, Label);
+        label.string = text;
+        label.fontSize = fontSize;
+        label.lineHeight = lineHeight;
+        label.color = color;
+        label.horizontalAlign = 1;
+        label.verticalAlign = 1;
+        label.enableWrapText = true;
+        label.overflow = Label.Overflow.SHRINK;
+        return label;
+    }
+
+    private createPanelButton(parent: Node, name: string, text: string, x: number, y: number, width: number, height: number, color: Color): Button {
+        const node = new Node(name);
+        node.layer = parent.layer;
+        parent.addChild(node);
+        node.setPosition(x, y, 0);
+        this.setNodeSize(node, width, height);
+        this.drawButtonBackground(node, width, height, color);
+
+        const labelNode = new Node('Label');
+        labelNode.layer = parent.layer;
+        node.addChild(labelNode);
+        labelNode.setPosition(0, 0, 0);
+        this.setNodeSize(labelNode, width - 20, height - 10);
+        const label = getOrAddComponent(labelNode, Label);
+        label.string = text;
+        label.fontSize = 21;
+        label.lineHeight = 28;
+        label.color = new Color(255, 255, 255, 255);
+        label.horizontalAlign = 1;
+        label.verticalAlign = 1;
+
+        return getOrAddComponent(node, Button);
     }
 
     private drawPanelBackground(panel: Node): void {
@@ -334,11 +687,17 @@ export class StartGameController extends Component {
 
     }
 
-    private drawButtonBackground(buttonNode: Node): void {
+    private clearChildren(node: Node): void {
+        for (const child of [...node.children]) {
+            child.destroy();
+        }
+    }
+
+    private drawButtonBackground(buttonNode: Node, width: number, height: number, color: Color): void {
         const graphics = getOrAddComponent(buttonNode, Graphics);
         graphics.clear();
-        graphics.fillColor = new Color(82, 132, 255, 255);
-        graphics.roundRect(-120, -36, 240, 72, 10);
+        graphics.fillColor = color;
+        graphics.roundRect(-width * 0.5, -height * 0.5, width, height, 10);
         graphics.fill();
     }
 
