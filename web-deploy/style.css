@@ -66,14 +66,48 @@ canvas {
   color: #fff;
 }
 
-.rotate-hint div {
-  font-size: 28px;
+.rotate-card {
+  width: min(82vw, 360px);
+  padding: 28px 24px;
+  border-radius: 18px;
+  background: rgba(15, 23, 36, 0.96);
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.rotate-icon {
+  font-size: 42px;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+
+.rotate-title {
+  font-size: 30px;
   font-weight: 800;
 }
 
-.rotate-hint span {
+.rotate-steps {
+  margin-top: 16px;
+  text-align: left;
   font-size: 16px;
+  line-height: 1.7;
   color: #cbd5e1;
+}
+
+.rotate-steps p {
+  margin: 4px 0;
+}
+
+#RotateRetryButton {
+  width: 100%;
+  margin-top: 20px;
+  border: 0;
+  border-radius: 12px;
+  padding: 13px 16px;
+  background: #4f83ff;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 700;
 }
 
 body.is-portrait .rotate-hint {

@@ -27,8 +27,16 @@
       </div>
     </div>
     <div id="RotateHint" class="rotate-hint">
-      <div>请横屏游玩</div>
-      <span>把手机横过来，守住今天。</span>
+      <div class="rotate-card">
+        <div class="rotate-icon">↻</div>
+        <div class="rotate-title">请横屏游玩</div>
+        <div class="rotate-steps">
+          <p>1. 打开手机「自动旋转」</p>
+          <p>2. 把手机横过来</p>
+          <p>3. 如果在微信/QQ里不生效，点右上角用浏览器打开</p>
+        </div>
+        <button id="RotateRetryButton" type="button">我已横屏，继续</button>
+      </div>
     </div>
 
     <script src="src/polyfills.bundle.js" charset="utf-8"></script>
@@ -40,10 +48,27 @@
         var DESIGN_HEIGHT = 720;
         var gameDiv = document.getElementById('GameDiv');
 
+        function getViewportSize() {
+          var viewport = window.visualViewport;
+          return {
+            width: viewport ? viewport.width : (window.innerWidth || document.documentElement.clientWidth || DESIGN_WIDTH),
+            height: viewport ? viewport.height : (window.innerHeight || document.documentElement.clientHeight || DESIGN_HEIGHT)
+          };
+        }
+
         function resizeGame() {
-          var width = window.innerWidth || document.documentElement.clientWidth || DESIGN_WIDTH;
-          var height = window.innerHeight || document.documentElement.clientHeight || DESIGN_HEIGHT;
-          var scale = Math.min(width / DESIGN_WIDTH, height / DESIGN_HEIGHT);
+          var viewportSize = getViewportSize();
+          var width = viewportSize.width;
+          var height = viewportSize.height;
+          var isPortrait = height > width && width < 900;
+          var isMobileLandscape = width > height && height < 700;
+          var containScale = Math.min(width / DESIGN_WIDTH, height / DESIGN_HEIGHT);
+          var scale = containScale;
+
+          if (isMobileLandscape) {
+            scale = Math.min(width / DESIGN_WIDTH, containScale * 1.22);
+          }
+
           var scaledWidth = Math.floor(DESIGN_WIDTH * scale);
           var scaledHeight = Math.floor(DESIGN_HEIGHT * scale);
 
@@ -53,15 +78,31 @@
           gameDiv.style.left = '50%';
           gameDiv.style.top = '50%';
 
-          document.body.classList.toggle('is-portrait', height > width && width < 900);
+          document.body.classList.toggle('is-portrait', isPortrait);
+          document.body.classList.toggle('is-mobile-landscape', isMobileLandscape);
           document.documentElement.style.setProperty('--game-width', scaledWidth + 'px');
           document.documentElement.style.setProperty('--game-height', scaledHeight + 'px');
         }
 
         window.addEventListener('resize', resizeGame);
+        if (window.visualViewport) {
+          window.visualViewport.addEventListener('resize', resizeGame);
+          window.visualViewport.addEventListener('scroll', resizeGame);
+        }
         window.addEventListener('orientationchange', function () {
           setTimeout(resizeGame, 120);
+          setTimeout(resizeGame, 500);
         });
+
+        var retryButton = document.getElementById('RotateRetryButton');
+        if (retryButton) {
+          retryButton.addEventListener('click', function () {
+            if (document.documentElement.requestFullscreen) {
+              document.documentElement.requestFullscreen().catch(function () {});
+            }
+            resizeGame();
+          });
+        }
         resizeGame();
       })();
 
